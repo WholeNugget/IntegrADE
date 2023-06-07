@@ -1,0 +1,217 @@
+#!/bin/zsh
+
+# IntegrADE
+# 
+# A tool to build ADE-based deployments
+# inspired by Installomator
+
+
+# Preferences:
+# DEBUG
+predeployTool="JamfConnect" # JamfConnect, NoLoAD, None
+predeployTimer="3"
+postdeployTool="SwiftDialog" # Swift Dialog, DEP Notify, IBM Notify?
+postAfterPre=true
+authProvider="JamfConnect" # Jamf Connect, NoLoAD, XCreds, Local
+logFile="/private/var/log/integrADE.log"
+jamfBin="/usr/local/bin/jamf"
+
+# Version
+VERSION=0.1
+BUILDDATE="2023-06-07"
+
+makeDirectory (){ # Check and create folder directories
+    if [[ ! -d "${1}" ]];then 
+        sudo mkdir -p "${1}"
+    fi 
+} # Usage: makeDirectory "/Users/localadmin/Desktop/test2/"
+
+logger () { # Used to write logs to file
+    logMessage="$1"
+    logLevel="$2"
+    timestamp=$(date +%F\ %T)
+
+    # Log Level Prefix
+    case "$logLevel" in 
+        1 ) # ERROR
+        logPrefix="ERROR"
+        ;;
+        2 ) # WARNING
+        logPrefix="WARN "
+        ;;
+        3 ) # INFO
+        logPrefix="INFO "
+        ;;
+        4 ) # DEBUG
+        logPrefix="DEBUG"
+        ;;
+    esac
+
+    echo "$timestamp : $logPrefix >> $logMessage" >> $logFile
+} #logger "Message goes here" 4
+
+
+# This will be used later for easier management
+getPrefs () { # Used to read preference & managed preference files
+    plistDomain="com.litlabs.integrade"
+    managedPrefs="/Library/Managed Preferences/$plistDomain.plist"
+    localPrefs="/Library/Preferences/$plistDomain.plist"
+
+    keyValue=$(defaults read "${managedPrefs}" $1 2>/dev/null)
+    if [[ -z $keyValue ]]; then
+        keyValue=$(defaults read "${localPrefs}" $1 2>/dev/null)
+    fi
+    echo "Your Key Value: $keyValue"
+} # Usage: getPrefs MyKey
+
+setupNotifyScript () {
+    scriptDir="/Library/Management/Scripts"
+    scriptLocation="$scriptDir/notify.sh"
+    notifyLog="/var/tmp/depnotify.log"
+    makeDirectory "$scriptDir"
+        tee "${scriptLocation}" << EOS
+#!/bin/zsh
+
+# Disable for prod
+# Allows to run this script on a machine to test how DEPNotify will present
+#/Applications/Utilities/DEPNotify.app/Contents/MacOS/DEPNotify &
+
+# Heredoc Variables
+############################
+policiesArray=("test1,Policy number 1" "test2, Policy number 2")
+testingMode=${6:-"true"}
+cleanUpTrigger=${7:-"predeploy-cleanup"}
+
+# NOTIFY WINDOW SETUP
+########################
+
+echo "STARTING RUN" >> "$notifyLog"
+
+echo "Time to caffeniate..." >> "$notifyLog"
+caffeinate -d -i -m -s -u &
+
+# Total setups to go through
+echo "Command: DeterminateOff:" >> "$notifyLog"
+
+# Set our logo
+echo "Command: MainTitle: Starting PreDeployment" >> "$notifyLog"
+
+echo "Command: Image: /System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/com.apple.macbookpro-13-retina-usbc-space-gray.icns" >> "$notifyLog"
+
+echo "Command: MainText: Mac has successfully enrolled to Jamf Pro server. The device will be automatically configured for College use." >> "$notifyLog"
+
+echo "Status: Preparing Mac..." >> ""$notifyLog""
+sleep 10
+
+echo "Command: DeterminateOffReset:" >> ""$notifyLog""
+echo "Command: Determinate: \$(( \${#policiesArray[@]} + 1 ))" >> ""$notifyLog""
+
+# POLICY LOOP
+for POLICY in \${policiesArray[@]}; do
+	# Write name to message
+	echo "Status: \$(echo "\$POLICY" | cut -d ',' -f1)" >> ""$notifyLog""
+    trigger="\$(echo "\$POLICY" | cut -d ',' -f2)"
+	if [ "\$testingMode" = true ]; then
+		sleep 10
+	elif [ "\$testingMode" = false ]; then
+		"$jamfBin" policy -event "\${trigger}"
+	fi
+done
+
+echo "Command: MainText: Successfully deployed the standard operating environment - performing clean up, the Mac will restart shortly." >> "$notifyLog"
+
+echo "Status: Wrapping up..." >> "$notifyLog"
+
+if [[ "\${testingMode}" = true ]]; then 
+	sleep 10
+    mkdir -p "${extAttFolder}" && touch "${extAttFile}"
+    ${authchanger} -reset
+elif [[ "\${testingMode}" = false ]]; then
+	"$jamfBin" policy -event \${cleanUpTrigger}
+    mkdir -p "${extAttFolder}" && touch "${extAttFile}"
+fi
+sleep 3
+echo "Command: Quit:" >> "$notifyLog"
+
+# Refresh the loginwindow (may not be needed for JC -> JC)
+/usr/bin/killall -HUP loginwindow
+
+exit 0
+
+EOS
+
+# Script Permissions
+chown root:wheel "${scriptLocation}"
+chmod 640 "${scriptLocation}"
+chmod u+x "${scriptLocation}"
+
+# Set ScriptPath parameter of Jamf Connect/NoLoAD plist to the location of our script file. 
+defaults write "${prefFile}" ScriptPath "${scriptLocation}"
+logger "ScriptPath set to: $(defaults read "${prefFile}" ScriptPath)" 4
+sleep 1
+
+}
+
+
+preDeployment () { # Setup our Notify script
+
+    if [[ $predeployTool == "JamfConnect" || $predeployTool == "NoLoAD" ]]; then
+    logger "Creating Notify script for $predeployTool" 3
+        setupNotifyScript 
+    else 
+        # Incase other preAuth utilities come into existence
+    fi
+
+    if 
+    # Hand-off to JC for Notify
+    /usr/local/bin/authchanger -reset -prelogin JamfConnectLogin:Notify
+    /usr/local/bin/authchanger -prelogin JamfConnectLogin:RunScript,privileged
+    echo "Rebooting with authorizationdb settings:" >> "${log}"
+    ${authchanger} -print >> "${log}"
+    sleep 1
+
+    # Restart our device to kick the predeployment
+    #shutdown -r now
+    #/usr/bin/killall -HUP loginwindow
+
+
+}
+
+postDeployment () {
+
+}
+
+main () {
+    # Waiting for Setup Assistant to end
+    logger "Checking Setup Assistant" 3
+    while $(pgrep -q -x "Setup Assistant"); do
+    logger "Setup Assistant is still running; pausing for 1 seconds" 4
+    sleep 1
+    done
+    logger "Setup Assistant has finished, proceeding..." 3
+
+    # Until the dock appears, OR we reach the PreDeployment timer
+    i=0
+    logger "Waiting for user to log in" 3
+    until $(pgrep -q -x "testmode") || (( $i > $predeployTimer )); do
+        logger "$i seconds have passed, predeploy occurs at $predeployTimer" 4
+        sleep 1
+        ((i++)) 
+    done
+    if (($i > $predeployTimer)); then
+        preDeployment
+    else
+        postDeployment
+    fi
+}
+
+startLaunchTimer () { # Our predeployment timer
+
+}
+# 
+
+# PreDeploymentTool: JamfConnectNotify, NoLoAD Notify
+# Post-Auth Deployment: SwiftDialog, DEPNotify
+# Authentication Provider: JamfConnect, NoMAD, XCreds, Local
+
+main
