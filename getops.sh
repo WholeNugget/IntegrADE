@@ -9,17 +9,17 @@ while test $# -gt 0; do
 			exit 0
 		;;
 		-h|--help)
-			echo "$package - attempt to capture frames"
+			echo "$BINNAME - ADE Deployment Tool"
 			echo " "
-			echo "$package [options] application [arguments]"
+			echo "$package [deploy|predeploy|both] --options"
 			echo " "
 			echo "options:"
 			echo "-h, --help                show brief help"
-			echo "-a, --action=ACTION       specify an action to use"
-			echo "-o, --output-dir=DIR      specify a directory to store output in"
+			echo "-v, --version       		show bin version"
+			echo "-pdt, --predeploytool=JamfConnect       specify an arg with variable"
 			exit 0
 		;;
-		-a)
+		-pdt)
 			shift
 			if test $# -gt 0; then
 				export PROCESS=$1
@@ -29,7 +29,7 @@ while test $# -gt 0; do
 			fi
 			shift
 		;;
-		--action*)
+		--predeploy*)
 			export PROCESS=`echo $1 | sed -e 's/^[^=]*=//g'`
 			shift
 		;;

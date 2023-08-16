@@ -22,8 +22,9 @@ logFile="/private/var/log/integrADE.log"
 jamfBin="/usr/local/bin/jamf"
 
 # Version
+BINNAME="integrADE"
 VERSION=0.1
-BUILDDATE="2023-06-07"
+BUILDDATE="2023-08-16"
 
 DIR="${BASH_SOURCE%/*}"
 if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
