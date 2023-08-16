@@ -3,8 +3,13 @@
 # IntegrADE
 # 
 # A tool to build ADE-based deployments
-# inspired by Installomator
+# inspired by Installomator / SwiftDialog / DEPNotify
 
+# End Goal -> /usr/local/litlabs/integrADE [predeploy|deploy] \
+# --registration [true/false] \
+# --auth [local/jamf/xcreds] \
+
+# Predeploy - Run after enrolment, or packaged up script.
 
 # Preferences:
 # DEBUG
@@ -20,39 +25,26 @@ jamfBin="/usr/local/bin/jamf"
 VERSION=0.1
 BUILDDATE="2023-06-07"
 
-makeDirectory (){ # Check and create folder directories
-    if [[ ! -d "${1}" ]];then 
-        sudo mkdir -p "${1}"
-    fi 
-} # Usage: makeDirectory "/Users/localadmin/Desktop/test2/"
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+# Includes can go here - we can assemble these later
+. "$DIR/functions.sh" # Must be first due to function usage in subsequent files 
+. "$DIR/getops.sh"
 
-logger () { # Used to write logs to file
-    logMessage="$1"
-    logLevel="$2"
-    timestamp=$(date +%F\ %T)
+# Write to PLIST
+prefFileManaged="/Library/Managed Preferences/$plistDomain.plist"
+prefFile="/Library/Preferences/$plistDomain.plist"
+#
+/usr/libexec/PlistBuddy -c "Add :Title string 'This Is My Title'" ${prefFileManaged}
+/usr/libexec/PlistBuddy -c "Add :Message string 'This Is My Message'" ${prefFile}
 
-    # Log Level Prefix
-    case "$logLevel" in 
-        1 ) # ERROR
-        logPrefix="ERROR"
-        ;;
-        2 ) # WARNING
-        logPrefix="WARN "
-        ;;
-        3 ) # INFO
-        logPrefix="INFO "
-        ;;
-        4 ) # DEBUG
-        logPrefix="DEBUG"
-        ;;
-    esac
+getPref Title
+getPref Message
 
-    echo "$timestamp : $logPrefix >> $logMessage" >> $logFile
-} #logger "Message goes here" 4
-
+exit 0
 
 # This will be used later for easier management
-getPrefs () { # Used to read preference & managed preference files
+getPref () { # Used to read preference & managed preference files
     plistDomain="com.litlabs.integrade"
     managedPrefs="/Library/Managed Preferences/$plistDomain.plist"
     localPrefs="/Library/Preferences/$plistDomain.plist"
@@ -62,7 +54,7 @@ getPrefs () { # Used to read preference & managed preference files
         keyValue=$(defaults read "${localPrefs}" $1 2>/dev/null)
     fi
     echo "Your Key Value: $keyValue"
-} # Usage: getPrefs MyKey
+} # Usage: getPref MyKey
 
 setupNotifyScript () {
     scriptDir="/Library/Management/Scripts"
